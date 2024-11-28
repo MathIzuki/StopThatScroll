@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">StopThatScroll</string>
+    <string name="accessibility_service_description">Block Reels and Shorts</string>
+</resources>
