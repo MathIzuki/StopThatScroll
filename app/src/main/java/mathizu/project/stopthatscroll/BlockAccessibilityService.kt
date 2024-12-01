@@ -2,13 +2,22 @@ package mathizu.project.stopthatscroll
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.SharedPreferences
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 
 class BlockAccessibilityService : AccessibilityService() {
 
+    private lateinit var preferences: SharedPreferences
 
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -16,23 +25,28 @@ class BlockAccessibilityService : AccessibilityService() {
 
         val rootNode = rootInActiveWindow ?: return
 
-        // Log des vues pour voir tous les éléments d'accessibilité
-        logViews(rootNode)
+        // Lire l'état des préférences
+        val preferences = getSharedPreferences("StopThatScrollPrefs", Context.MODE_PRIVATE)
+        val isBlockingEnabled = preferences.getBoolean("isBlockingEnabled", false)
+        val isYouTubeBlocked = preferences.getBoolean("isYouTubeBlocked", false)
+        val isInstagramBlocked = preferences.getBoolean("isInstagramBlocked", false)
+        val isTikTokBlocked = preferences.getBoolean("isTikTokBlocked", false)
 
-        // Bloque YouTube Shorts
-        if (containsYouTubeShorts(rootNode)) {
-            performGlobalAction(GLOBAL_ACTION_BACK)  // Revenir à la page précédente
+        // Si le blocage global est désactivé, ne rien faire
+        if (!isBlockingEnabled) return
+
+        // Bloquer en fonction des préférences
+        if (isYouTubeBlocked && containsYouTubeShorts(rootNode)) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
             Toast.makeText(this, "Accès aux Shorts YouTube bloqué !", Toast.LENGTH_SHORT).show()
         }
 
-        // Bloque Instagram Reels
-        if (containsReels(rootNode)) {
-            performGlobalAction(GLOBAL_ACTION_BACK)  // Revenir à la page précédente
+        if (isInstagramBlocked && containsReels(rootNode)) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
             Toast.makeText(this, "Accès aux Reels Instagram bloqué !", Toast.LENGTH_SHORT).show()
         }
 
-        // Bloque TikTok (entièrement, pas spécifique aux éléments)
-        if (isTikTokApp(event)) {
+        if (isTikTokBlocked && isTikTokApp(event)) {
             performGlobalAction(GLOBAL_ACTION_HOME)
             Toast.makeText(this, "Accès à TikTok bloqué !", Toast.LENGTH_SHORT).show()
         }
@@ -104,15 +118,69 @@ class BlockAccessibilityService : AccessibilityService() {
         Log.d("BlockAccessibilityService", "Service interrompu")
     }
 
-    // Configuration du service d'accessibilité
+
     override fun onServiceConnected() {
         super.onServiceConnected()
+
+        // Vérification pour éviter les exceptions
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundServiceSafely()
+        }
+
+        // Configuration de base
         val info = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS // Permet d'accéder aux IDs de vues
+            flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
         }
         this.serviceInfo = info
+
         Toast.makeText(this, "Service de blocage activé", Toast.LENGTH_SHORT).show()
     }
+
+    private fun startForegroundServiceSafely() {
+        val notificationId = 1
+        val channelId = "service_channel"
+
+        // Crée le canal de notification pour Android 8.0 et supérieur
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Service Notifications",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        // Intent pour ouvrir l'application en cliquant sur la notification
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Construire la notification
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("StopThatScroll")
+            .setContentText("Le service de blocage est actif")
+            .setSmallIcon(R.drawable.ic_notification) // Remplace par un ID valide d'icône
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "service_channel", // ID du canal
+                "Service Notifications", // Nom du canal
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
+
+        // Démarrer le service au premier plan
+        startForeground(notificationId, notification)
+    }
+
+
 }
